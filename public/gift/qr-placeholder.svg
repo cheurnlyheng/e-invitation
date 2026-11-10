@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="220" height="220">
+  <rect width="220" height="220" fill="#fff"/>
+  <rect x="10" y="10" width="200" height="200" rx="14" fill="none" stroke="#5e813c" stroke-width="3" stroke-dasharray="10 8"/>
+  <text x="110" y="104" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#5e813c">KHQR</text>
+  <text x="110" y="132" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" fill="#5e813c">placeholder</text>
+</svg>
