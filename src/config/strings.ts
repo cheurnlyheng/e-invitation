@@ -15,6 +15,11 @@ export const ui = {
     },
     at: { km: "", en: "At" },
   },
+  // Used on the downloadable QR card made in the dashboard
+  card: {
+    eyebrow: { km: "សិរីមង្គលអាពាហ៍ពិពាហ៍", en: "The Wedding Of" },
+    scan: { km: "ស្កេនដើម្បីបើកសំបុត្រអញ្ជើញ", en: "Scan to open the invitation" },
+  },
   gallery: { title: { km: "កម្រងរូបភាព", en: "Photo Gallery" } },
   reception: {
     title: { km: "ព័ត៌មានពិធីជប់លៀង", en: "Reception Info" },

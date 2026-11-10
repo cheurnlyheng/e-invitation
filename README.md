@@ -26,7 +26,7 @@ Sign in with one shared password. It shows:
 - **Overview:** guests coming, replies saying no, and the latest replies and wishes.
 - **RSVPs:** every reply with its guest count; search, filter, delete, download CSV.
 - **Wishes:** hide a wish from the public guestbook (it stays here) or delete it; download CSV.
-- **Links:** type your guest list, get one personal link per guest (`/?to=Name`), and see who has opened theirs and who has replied.
+- **Links:** type your guest list, get one personal link per guest (`/?to=Name`), and see who has opened theirs and who has replied. Each guest (and the general link) has a **QR card** button: it shows a card with the wedding artwork, the couple's names, the date, the guest's name and a QR code for that link, in Khmer or English, with a **Download PNG** button (1200x2150, ready to send in a chat or print). The QR points at the address you opened the dashboard from, so make the cards from the live site, not localhost.
 
 The dashboard is not linked from the invitation and is excluded from search engines (`robots.txt`).
 

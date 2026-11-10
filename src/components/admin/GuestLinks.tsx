@@ -2,6 +2,7 @@
 
 import { useState, useSyncExternalStore } from "react";
 import type { Summary } from "./AdminApp";
+import { QrCardSheet, type CardTarget } from "./QrCardSheet";
 
 const KEY = "ei:admin:guests";
 
@@ -34,6 +35,12 @@ export function GuestLinks({ data }: { data: Summary }) {
   const text = useSyncExternalStore(subscribe, read, () => "");
   const origin = useSyncExternalStore(subscribe, () => window.location.origin, () => "");
   const [copied, setCopied] = useState("");
+  const [card, setCard] = useState<CardTarget | null>(null);
+  const [cardOpen, setCardOpen] = useState(false);
+  const showCard = (guest: string, url: string) => {
+    setCard({ guest, url });
+    setCardOpen(true);
+  };
 
   const names = [...new Set(text.split("\n").map((n) => n.trim()).filter(Boolean))];
   const link = (name?: string) => (name ? `${origin}/?to=${encodeURIComponent(name)}` : origin + "/");
@@ -73,6 +80,9 @@ export function GuestLinks({ data }: { data: Summary }) {
           <button type="button" onClick={() => copy("generic", link())} className="rounded-full bg-white px-4 py-1.5 text-sm text-leaf ring-1 ring-leaf/40 hover:bg-leaf/10">
             {copied === "generic" ? "Copied" : "Copy the general link (no name)"}
           </button>
+          <button type="button" onClick={() => showCard("", link())} className="rounded-full bg-white px-4 py-1.5 text-sm text-leaf ring-1 ring-leaf/40 hover:bg-leaf/10">
+            QR card for the general link
+          </button>
         </div>
       </section>
 
@@ -82,23 +92,30 @@ export function GuestLinks({ data }: { data: Summary }) {
             const opens = opened.get(n.toLowerCase());
             const answer = replied.get(n.toLowerCase());
             return (
-              <li key={n} className="flex items-center gap-3 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{n}</p>
-                  <p className="truncate text-xs text-ink/50">{link(n)}</p>
+              <li key={n} className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <p className="min-w-0 flex-1 truncate font-medium">{n}</p>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${opens ? "bg-leaf/15 text-leaf" : "bg-black/5 text-ink/50"}`}>{opens ? `Opened${opens > 1 ? ` ×${opens}` : ""}` : "Not opened"}</span>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${answer === undefined ? "bg-black/5 text-ink/50" : answer ? "bg-leaf/15 text-leaf" : "bg-red-100 text-red-700"}`}>
+                    {answer === undefined ? "No reply" : answer ? "Coming" : "Can't come"}
+                  </span>
                 </div>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${opens ? "bg-leaf/15 text-leaf" : "bg-black/5 text-ink/50"}`}>{opens ? `Opened${opens > 1 ? ` ×${opens}` : ""}` : "Not opened"}</span>
-                <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-xs sm:inline ${answer === undefined ? "bg-black/5 text-ink/50" : answer ? "bg-leaf/15 text-leaf" : "bg-red-100 text-red-700"}`}>
-                  {answer === undefined ? "No reply" : answer ? "Coming" : "Can't come"}
-                </span>
-                <button type="button" onClick={() => copy(n, link(n))} className="shrink-0 rounded-full bg-white px-3 py-1 text-xs text-leaf ring-1 ring-leaf/40 hover:bg-leaf/10">
-                  {copied === n ? "Copied" : "Copy link"}
-                </button>
+                <p className="mt-0.5 truncate text-xs text-ink/50">{link(n)}</p>
+                <div className="mt-2 flex gap-2">
+                  <button type="button" onClick={() => copy(n, link(n))} className="rounded-full bg-white px-3 py-1 text-xs text-leaf ring-1 ring-leaf/40 hover:bg-leaf/10">
+                    {copied === n ? "Copied" : "Copy link"}
+                  </button>
+                  <button type="button" onClick={() => showCard(n, link(n))} className="rounded-full bg-leaf px-3 py-1 text-xs font-medium text-white hover:brightness-110">
+                    QR card · PNG
+                  </button>
+                </div>
               </li>
             );
           })}
         </ul>
       )}
+
+      <QrCardSheet open={cardOpen} target={card} onClose={() => setCardOpen(false)} />
     </div>
   );
 }
