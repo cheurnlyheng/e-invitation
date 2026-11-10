@@ -2,7 +2,7 @@
 
 Mobile-first wedding invitation for one wedding, with a private dashboard for the couple. Guests open a link or scan a QR code. Khmer is the default language, with an English switch.
 
-Built with Next.js (App Router), React, TypeScript, Tailwind CSS v4, `motion` and Postgres (Neon). The look and behaviour follow the ChungDoi "lotus-v2-green" template as a stand-in until the real invitation design exists.
+Built with Next.js (App Router), React, TypeScript, Tailwind CSS v4, `motion` and Postgres (hosted on Railway). The look and behaviour follow the ChungDoi "lotus-v2-green" template as a stand-in until the real invitation design exists.
 
 ```bash
 npm run dev     # http://localhost:3000   (dashboard: /admin)
@@ -34,7 +34,7 @@ The dashboard is not linked from the invitation and is excluded from search engi
 
 | Situation | Storage |
 | --- | --- |
-| `DATABASE_URL` is set (Vercel + Neon) | Neon Postgres. Tables are created automatically on first use. |
+| `DATABASE_URL` is set (Vercel + Railway) | Postgres. Tables are created automatically on first use. |
 | Not set, running `npm run dev` | A git-ignored JSON file in `.data/`, so everything works locally with no setup. |
 | Not set, in production | Saving is refused with a clear error, so guest data is never lost silently. |
 
@@ -46,10 +46,12 @@ Copy `.env.example` to `.env.local` for local work; set the same names in Vercel
 | --- | --- |
 | `ADMIN_PASSWORD` | Dashboard password, at least 6 characters. With no password the dashboard stays locked. |
 | `ADMIN_SECRET` | Optional. Signs the sign-in cookie; change it to sign everyone out. Defaults to the password. |
-| `DATABASE_URL` | Postgres connection string. The Neon integration on Vercel adds it for you. |
+| `DATABASE_URL` | Postgres connection string. For Railway use the database's public address (its `DATABASE_PUBLIC_URL` variable). |
+| `DATABASE_CA` | The Postgres server's certificate authority, in PEM form (it is public, not secret). Railway's database signs its own certificate, so this is how the site checks it is talking to the real database; the connection is refused if the server's certificate was not issued by it. Leave it empty for hosts with a normal public certificate. If the Railway database is ever recreated, its certificate changes and this value must be replaced. |
 
 ### Security notes
 
+- The database connection is encrypted and the server's certificate is verified (pinned through `DATABASE_CA`); it is never switched to "trust anything".
 - Every admin route re-checks the signed, HttpOnly sign-in cookie itself; the page is only a convenience.
 - Wrong passwords are slowed down and rate limited; guest forms are rate limited per IP; request bodies are size-capped.
 - Admin changes are refused when the request comes from another website.

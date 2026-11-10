@@ -1,10 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { neon } from "@neondatabase/serverless";
+import { X509Certificate } from "node:crypto";
+import type tls from "node:tls";
+import { Pool } from "pg";
 
 /**
  * Where RSVPs, wishes and visits are kept.
- *  - DATABASE_URL (or POSTGRES_URL) set  -> Neon Postgres. Used on Vercel.
+ *  - DATABASE_URL (or POSTGRES_URL) set  -> Postgres (Railway in production). Used on Vercel.
  *  - not set, and not in production      -> a JSON file in .data/, so the site and
  *                                           the dashboard work locally with no setup.
  *  - not set, in production              -> StorageNotConfigured (never lose guest data silently).
@@ -64,69 +66,105 @@ export function computeStats(visits: Visit[]): Stats {
 }
 
 // ---------------------------------------------------------------------------
-// Postgres (Neon)
+// Postgres
 // ---------------------------------------------------------------------------
 
+/**
+ * Connection settings for the pool.
+ *
+ * Production databases are reached over an encrypted connection whose certificate is checked:
+ *  - Railway's Postgres signs its own certificate with a private authority, which no public
+ *    list knows about. Put that authority's certificate (public, not secret) in DATABASE_CA and
+ *    the connection is trusted only if the server's certificate was issued by it. The server's
+ *    certificate is made for "localhost", so the name check is replaced by that issuer check.
+ *  - With no DATABASE_CA the normal public-authority check applies (right for Neon, Supabase...).
+ *  - Local databases (localhost) and "?sslmode=disable" use no encryption.
+ */
+function sslFor(url: URL): false | true | tls.ConnectionOptions {
+  const local = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname);
+  if (local || url.searchParams.get("sslmode") === "disable") return false;
+
+  const caPem = process.env.DATABASE_CA?.replace(/\\n/g, "\n").trim();
+  if (!caPem) return true;
+
+  const caKey = new X509Certificate(caPem).publicKey;
+  return {
+    ca: caPem,
+    checkServerIdentity: (_host, cert) =>
+      new X509Certificate(cert.raw).verify(caKey) ? undefined : new Error("The database's certificate was not issued by the trusted authority in DATABASE_CA"),
+  };
+}
+
+/** A small connection pool: a few connections per server instance are plenty for a wedding site. */
+function makePool(raw: string): Pool {
+  const url = new URL(raw);
+  const ssl = sslFor(url);
+  url.searchParams.delete("sslmode"); // decided above, so the URL's own setting cannot conflict
+  const pool = new Pool({ connectionString: url.toString(), ssl, max: 3, idleTimeoutMillis: 10_000, connectionTimeoutMillis: 10_000, allowExitOnIdle: true });
+  pool.on("error", (e) => console.error("[db] idle connection error:", e.message)); // a dropped idle connection must not crash the server
+  return pool;
+}
+
 function pgStore(url: string): Store {
-  const sql = neon(url);
+  const pool = makePool(url);
+  type Row = Record<string, unknown>;
+  const query = async (text: string, values: unknown[] = []) => (await pool.query(text, values)).rows as Row[];
   let ready: Promise<void> | null = null;
 
   const init = () =>
     (ready ??= (async () => {
-      await sql`CREATE TABLE IF NOT EXISTS rsvps (id SERIAL PRIMARY KEY, name TEXT NOT NULL, attending BOOLEAN NOT NULL, guests INT NOT NULL DEFAULT 0, invited_as TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT now())`;
-      await sql`CREATE TABLE IF NOT EXISTS wishes (id SERIAL PRIMARY KEY, name TEXT NOT NULL, message TEXT NOT NULL, hidden BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`;
-      await sql`CREATE TABLE IF NOT EXISTS visits (id SERIAL PRIMARY KEY, kind TEXT NOT NULL, visitor TEXT NOT NULL, guest TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT now())`;
-      await sql`CREATE INDEX IF NOT EXISTS visits_created_idx ON visits (created_at)`;
+      await query(`CREATE TABLE IF NOT EXISTS rsvps (id SERIAL PRIMARY KEY, name TEXT NOT NULL, attending BOOLEAN NOT NULL, guests INT NOT NULL DEFAULT 0, invited_as TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+      await query(`CREATE TABLE IF NOT EXISTS wishes (id SERIAL PRIMARY KEY, name TEXT NOT NULL, message TEXT NOT NULL, hidden BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+      await query(`CREATE TABLE IF NOT EXISTS visits (id SERIAL PRIMARY KEY, kind TEXT NOT NULL, visitor TEXT NOT NULL, guest TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+      await query(`CREATE INDEX IF NOT EXISTS visits_created_idx ON visits (created_at)`);
     })().catch((e) => {
       ready = null; // let the next request retry instead of caching the failure
       throw e;
     }));
 
-  const iso = (v: unknown) => new Date(v as string).toISOString();
-  type Row = Record<string, unknown>;
+  const iso = (v: unknown) => new Date(v as string | Date).toISOString();
   const wish = (r: Row): Wish => ({ id: Number(r.id), name: String(r.name), message: String(r.message), hidden: Boolean(r.hidden), createdAt: iso(r.created_at) });
 
   return {
     async addRsvp(r) {
       await init();
-      await sql`INSERT INTO rsvps (name, attending, guests, invited_as) VALUES (${r.name}, ${r.attending}, ${r.guests}, ${r.invitedAs})`;
+      await query(`INSERT INTO rsvps (name, attending, guests, invited_as) VALUES ($1, $2, $3, $4)`, [r.name, r.attending, r.guests, r.invitedAs]);
     },
     async listRsvps() {
       await init();
-      const rows = (await sql`SELECT id, name, attending, guests, invited_as, created_at FROM rsvps ORDER BY created_at DESC`) as Row[];
+      const rows = await query(`SELECT id, name, attending, guests, invited_as, created_at FROM rsvps ORDER BY created_at DESC`);
       return rows.map((r) => ({ id: Number(r.id), name: String(r.name), attending: Boolean(r.attending), guests: Number(r.guests), invitedAs: String(r.invited_as), createdAt: iso(r.created_at) }));
     },
     async deleteRsvp(id) {
       await init();
-      await sql`DELETE FROM rsvps WHERE id = ${id}`;
+      await query(`DELETE FROM rsvps WHERE id = $1`, [id]);
     },
     async addWish(w) {
       await init();
-      const rows = (await sql`INSERT INTO wishes (name, message) VALUES (${w.name}, ${w.message}) RETURNING id, name, message, hidden, created_at`) as Row[];
+      const rows = await query(`INSERT INTO wishes (name, message) VALUES ($1, $2) RETURNING id, name, message, hidden, created_at`, [w.name, w.message]);
       return wish(rows[0]);
     },
     async listWishes({ includeHidden = false } = {}) {
       await init();
-      const rows = (includeHidden
-        ? await sql`SELECT id, name, message, hidden, created_at FROM wishes ORDER BY created_at DESC`
-        : await sql`SELECT id, name, message, hidden, created_at FROM wishes WHERE hidden = false ORDER BY created_at DESC`) as Row[];
+      const where = includeHidden ? "" : " WHERE hidden = false";
+      const rows = await query(`SELECT id, name, message, hidden, created_at FROM wishes${where} ORDER BY created_at DESC`);
       return rows.map(wish);
     },
     async setWishHidden(id, hidden) {
       await init();
-      await sql`UPDATE wishes SET hidden = ${hidden} WHERE id = ${id}`;
+      await query(`UPDATE wishes SET hidden = $1 WHERE id = $2`, [hidden, id]);
     },
     async deleteWish(id) {
       await init();
-      await sql`DELETE FROM wishes WHERE id = ${id}`;
+      await query(`DELETE FROM wishes WHERE id = $1`, [id]);
     },
     async addVisit(v) {
       await init();
-      await sql`INSERT INTO visits (kind, visitor, guest) VALUES (${v.kind}, ${v.visitor}, ${v.guest})`;
+      await query(`INSERT INTO visits (kind, visitor, guest) VALUES ($1, $2, $3)`, [v.kind, v.visitor, v.guest]);
     },
     async stats() {
       await init();
-      const rows = (await sql`SELECT kind, visitor, guest, created_at FROM visits`) as Row[];
+      const rows = await query(`SELECT kind, visitor, guest, created_at FROM visits`);
       return computeStats(rows.map((r) => ({ kind: r.kind as VisitKind, visitor: String(r.visitor), guest: String(r.guest), createdAt: iso(r.created_at) })));
     },
   };
