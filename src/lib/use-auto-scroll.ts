@@ -4,13 +4,17 @@ import { useEffect } from "react";
 
 const NAV_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]);
 const FIELD = "input, textarea, select, [contenteditable='true']";
+// Things a visitor operates rather than reads. Tapping one of these never resumes the scroll.
+// Mark any other interactive block (like the photo gallery) with data-no-autoscroll.
+const DYNAMIC = "a, button, input, textarea, select, label, summary, iframe, video, audio, [role='button'], [role='radio'], [role='dialog'], [contenteditable='true'], [data-no-autoscroll]";
 
 /**
  * Gently scrolls the page down on its own once the invitation is opened, like
  * the reference template.
  *  - Scrolling by hand (wheel, swipe, arrow keys, dragging the scrollbar) pauses it.
- *  - Tapping or clicking the page resumes it, except on a form field (so a guest can
- *    type a wish without the page sliding away) or while a pop-up is open.
+ *  - Tapping or clicking a plain part of the page (background, text, decoration) resumes it.
+ *    Tapping something interactive does not: text boxes, buttons, links, the photo gallery
+ *    (so a guest can type a wish or browse photos without the page sliding away).
  *  - It holds still while a pop-up (RSVP, gift box, photo viewer) is open.
  *  - It is skipped entirely for visitors who prefer reduced motion.
  */
@@ -68,7 +72,7 @@ export function useAutoScroll(active: boolean, pxPerSecond = 51, startDelayMs = 
     const onClick = (e: MouseEvent) => {
       // the tap on "Open" that revealed the page is still being delivered; it must not count
       if (e.timeStamp < mountedAt) return;
-      if (e.target instanceof Element && e.target.closest(`${FIELD}, label`)) return;
+      if (e.target instanceof Element && e.target.closest(DYNAMIC)) return;
       // wait a tick so a click that opens a pop-up is judged after the pop-up exists
       setTimeout(() => {
         if (!popupOpen()) start();

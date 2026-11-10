@@ -168,7 +168,7 @@ export function Gallery() {
       <div className="relative z-10 flex w-full flex-col items-center px-6">
         <SectionTitle>{t(ui.gallery.title)}</SectionTitle>
 
-        <div className="relative z-10 mt-[18px] w-full max-w-[334px] md:max-w-[560px]">
+        <div data-no-autoscroll className="relative z-10 mt-[18px] w-full max-w-[334px] md:max-w-[560px]">
           <div
             ref={stage}
             className="relative h-[340px] touch-pan-y select-none md:h-[520px]"
